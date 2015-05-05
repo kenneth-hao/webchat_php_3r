@@ -1,0 +1,465 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="format-detection" content="telephone=no">
+    <title>凯迪拉克经销商</title>
+    <link rel="stylesheet" type="text/css" href="style/layout.css">
+    <link rel="stylesheet" type="text/css" href="style/customerService.css">
+    <script type="text/javascript" src="js/jquery-1.8.3.min.js"></script>
+    <script type="text/javascript" src="js/strophe/strophe.js"></script>
+    <!-- 断线重连的插件 -->
+    <!-- // <script type="text/javascript" src="js/strophe/strophe.cm.js"></script> -->
+    <script type="text/javascript" src="js/my/chat.js"></script>
+    <style type="text/css">
+        div.template {
+            display: none
+        }
+    </style>
+</head>
+
+<body>
+    <div id="headerPlace"></div>
+	<div id="header" class="clearfix">
+		<img width="80" src="images/logo.png" alt="" id="logo">
+		<h2 class="headerTit">{$realname}</h2>
+	</div>
+    <div id="hook">
+        <div class="spinner">
+            <div class="bar1"></div>
+            <div class="bar2"></div>
+            <div class="bar3"></div>
+            <div class="bar4"></div>
+            <div class="bar5"></div>
+            <div class="bar6"></div>
+            <div class="bar7"></div>
+            <div class="bar8"></div>
+            <div class="bar9"></div>
+            <div class="bar10"></div>
+            <div class="bar11"></div>
+            <div class="bar12"></div>
+        </div>
+    </div>
+    <!-- 会话窗口 -->
+    <div id="session_container">
+    <!-- 调试日志记录容器 -->
+    <div id="output" style="display: none"></div>    
+    </div>
+    
+
+    <!-- 会话窗口 END -->
+
+    <!-- 时间戳模板 START -->
+    <div class="time template">
+        <time>2015-12-12 12:12</time>
+    </div>
+    <!-- 时间戳模板 END -->
+
+    <!-- 客服消息模板 END -->
+	<div class="service clearfix template">
+    	<div class="userFace" style=""></div>
+        <div class="content"></div>
+    </div>
+    <!-- 客服消息模板 END -->
+
+    <!-- 用户消息模板 END -->
+	<div class="customer clearfix template">
+    	<div class="userFace" style=""></div>
+        <div class="content"></div>
+    </div>
+    <!-- 用户消息模板 END -->
+
+    <div class="sendWrap clearfix">
+    <form action="#">
+    	<textarea class="sendContent" cols="30" rows="3"></textarea>
+        <button type="button" class="btnRed btnSub" id="btn_send">发送</button>
+    </form>
+    </div>
+    <div class="sendWrapPlace"></div>
+
+    <!-- 加载遮蔽框 START -->
+    <div id="loader" style="display:block;">
+        <div class="loaderInner">
+            <div class="loaderTips">加载中...</div>
+            <span></span>  
+            <span></span>  
+            <span></span>  
+            <span></span>  
+            <span></span>  
+        </div>
+    </div>
+    <!-- 加载遮蔽框 END -->
+
+    <script type="text/javascript">
+// 是否启用调试信息
+var debug = false
+
+var $OUTPUT = $('#output')
+
+if (debug) {
+    $OUTPUT.css('display', 'block');
+} else {
+    $OUTPUT.css('display', 'none');
+}
+
+<!-- UI support START -->
+// 浏览器版本
+var browser = {
+    versions: function() {
+        var u = navigator.userAgent,
+            app = navigator.appVersion
+        return {
+            trident: u.indexOf('Trident') > -1, //IE内核
+            presto: u.indexOf('Presto') > -1, //opera内核
+            webKit: u.indexOf('AppleWebKit') > -1, //苹果、谷歌内核
+            gecko: u.indexOf('Gecko') > -1 && u.indexOf('KHTML') == -1, //火狐内核
+            mobile: !!u.match(/AppleWebKit.*Mobile.*/) || !!u.match(/AppleWebKit/), //是否为移动终端
+            ios: !!u.match(/\(i[^;]+;( U;)? CPU.+Mac OS X/), //ios终端
+            android: u.indexOf('Android') > -1 || u.indexOf('Linux') > -1, //android终端或者uc浏览器
+            iPhone: u.indexOf('iPhone') > -1, // || u.indexOf('Mac') > -1, //是否为iPhone或者QQHD浏览器
+            iPad: u.indexOf('iPad') > -1, //是否iPad
+            webApp: u.indexOf('Safari') == -1 //是否web应该程序，没有头部与底部
+        };
+    }(),
+    language: (navigator.browserLanguage || navigator.language).toLowerCase()
+}
+// 会话窗口高度
+var sessionContainerHeight
+// 设置正在加载的请求标志, 用于限制 onscroll 重复执行的问题
+var loadFlag = false
+// 加载间隔时间 (ms)
+var load_interval = 3000
+//显示菊花
+function showHook() {
+    $("#hook").animate({
+        "marginTop": "0px"
+    }, 200);
+}
+//隐藏菊花
+function loadHook() {
+    var loadheight = $('#hook').height();
+    $("#hook").delay(500).slideUp(200, function() {
+        $(this).css("margin-top", "-" + loadheight + "px").show();
+    })
+}
+
+<!-- UI support END  -->
+
+// 好友的消息回复模板
+var $TEMPLATE_CODE_SERVICE = $('div.service.template')
+// 用户的消息回复模板
+var $TEMPLATE_CODE_CUSTOMER = $('div.customer.template')
+// 聊天记录时间戳模板
+var $TEMPLATE_CODE_TIMESTAMP = $('div.time.template')
+// 会话窗口
+var $SESSION_CONTAINER = $('#session_container')
+// 新的会话
+var chat = new Chat()
+    
+// 初始化设置
+var settings = {
+    // BOSH 地址,  注意: 末尾的斜杠必须要有
+    bosh: 'http://192.168.0.237:7070/http-bind/',
+    // 聊天服务器系统配置 domain
+    domain: 'spark-chat.cadillac-1.com',
+    // 用户名
+    uname: 'hyw',
+    // 密码
+    upwd: 'sa',
+    // 聊天用户的用户名
+    f_uname: 'app001',
+    // 启用调试信息
+    debug: debug
+}
+
+// 是否已连接
+var is_connected = false
+// 是否是今天的第一个聊天记录
+var first_msg_today = true
+// 上一条聊天记录的时间
+var pre_chatlog_createDate
+// 消息发送后 de 回调函数
+var after_send = function(o) {
+    if (first_msg_today) {
+        append_timestamp()
+        first_msg_today = false
+    }
+    var $customer_reply = $TEMPLATE_CODE_CUSTOMER.clone().removeClass("template")
+    $customer_reply.find('div.content').text(o.msg)
+    $SESSION_CONTAINER.append($customer_reply)
+        // 清空输入框
+    $("textarea.sendContent").val('')
+        // 消息发送成功后自动滚动到页面底部
+    setTimeout(function() {
+        $("html,body").animate({
+            "scrollTop": $(document).height()
+        }, 200);
+    }, 200)
+}
+// 收到新消息时 de 回调函数
+var receive = function(o) {
+    if (first_msg_today) {
+        append_timestamp()
+        first_msg_today = false
+    }
+    var $service_reply = $TEMPLATE_CODE_SERVICE.clone().removeClass("template")
+    $service_reply.find('div.content').text(o.msg)
+
+    $SESSION_CONTAINER.append($service_reply)
+        // 收到新消息自动滚动到页面底部
+    $("html,body").animate({
+        "scrollTop": $(document).height()
+    }, 200);
+}
+/**
+ * 是否是同一天
+ */
+var is_same_day = function(d1, d2) {
+    return (d1.getFullYear() == d2.getFullYear() &&
+        d1.getMonth() == d2.getMonth() &&
+        d1.getDate() == d2.getDate())
+}
+
+/**
+ * 在聊天记录中添加时间戳.
+ * 如果是今天, 时间戳格式为 "HH-mm-ss";
+ * 不是今天的话, 时间戳格式为 "YYYY-MM-dd";
+ * 默认为当前时间;
+ *
+ * @param date 时间戳的日期
+ * @param is_prepend true, 添加到聊天容器前; 默认添加到容器最后
+ *
+ */
+var append_timestamp = function(date, is_prepend) {
+    var year, month, day, hours, minutes, seconds
+    // 最终返回的日期字符串
+    var time
+    // 默认
+    if (typeof date == 'undefined') {
+        date = new Date()
+        hours = date.getHours(), hours = hours < 10 ? '0' + hours : hours
+        minutes = date.getMinutes(), minutes = minutes < 10 ? '0' + minutes : minutes
+        seconds = date.getSeconds(), seconds = seconds < 10 ? '0' + seconds : seconds
+        time = hours + ":" + minutes + ":" + seconds
+    // 今天
+    } else if (is_same_day(date, new Date())) {
+        hours = date.getHours(), hours = hours < 10 ? '0' + hours : hours
+        minutes = date.getMinutes(), minutes = minutes < 10 ? '0' + minutes : minutes
+        seconds = date.getSeconds(), seconds = seconds < 10 ? '0' + seconds : seconds
+        time = hours + ":" + minutes + ":" + seconds
+    // 不是今天
+    } else {
+        year = date.getFullYear()
+        month = date.getMonth() + 1, month = month < 10 ? '0' + month : month
+        day = date.getDate(), day = day < 10 ? '0' + day : day
+        time = year + '-' + month + '-' + day
+    }
+    $time = $TEMPLATE_CODE_TIMESTAMP.clone().removeClass("template")
+    $time.find('time').text(time)
+    if (typeof is_prepend == 'undefined' || is_prepend == false) {
+        $SESSION_CONTAINER.append($time)
+    } else if (is_prepend) {
+        $SESSION_CONTAINER.prepend($time)
+    }
+}
+
+// 是否存在更多聊天记录
+var is_more = true
+
+// 加载聊天记录成功后 de 回调函数
+var load_chatlogs_success = function(o) {
+    // 记录地主家(服务器)是否有更多 de 余粮(聊天记录)
+    // 用于确认下次请求(加载聊天记录)是否需要继续提交
+    is_more = o.more
+    if (o.data) {
+        $.each(o.data, function(i, ele) {
+            // 在页面内添加聊天内容
+            if (ele.sender == settings.uname) {
+                var $customer_reply = $TEMPLATE_CODE_CUSTOMER.clone().removeClass("template")
+                $customer_reply.find('div.content').text(ele.content)
+                $SESSION_CONTAINER.prepend($customer_reply)
+            } else if (ele.sender == settings.f_uname) {
+                var $service_reply = $TEMPLATE_CODE_SERVICE.clone().removeClass("template")
+                $service_reply.find('div.content').text(ele.content)
+                $SESSION_CONTAINER.prepend($service_reply)
+            }
+            // 添加时间戳
+            if (pre_chatlog_createDate) {
+                // 如果是同一天的聊天记录, 只有最后一条加载的记录添加后, 添加一个时间戳
+                if (is_same_day(new Date(ele.createDate), new Date(pre_chatlog_createDate))) {
+                    if (i == o.data.length - 1) {
+                        append_timestamp(new Date(ele.createDate), true)
+                    }
+                    // 如果不是同一天的聊天记录, 隔一天记录一次
+                } else {
+                    append_timestamp(new Date(pre_chatlog_createDate), true)
+                }
+            }
+            // 重置上一条聊天记录的时间
+            pre_chatlog_createDate = ele.createDate
+        })
+    }
+}
+
+// 加载错误 de 回调函数
+var load_error = function() {
+
+    setTimeout(function() {
+        loadFlag = false;
+    }, load_interval);
+    //隐藏菊花
+    loadHook();
+    $("html, body").scrollTop(1);
+}
+
+// 登录成功后 de 回调函数
+var on_connected = function() {
+    is_connected = true
+    $('#loader').css('display', 'none')
+    $('#btn_send').attr('disabled', false)
+    if (debug == false) {
+        $SESSION_CONTAINER.empty();
+    }
+    // 这是一本回忆录
+    chat.load_chatlogs(settings.f_uname)
+
+}
+
+// 连接中 de 回调函数
+var on_connecting = function() {
+    $('#loader').find('div.loaderTips').text('登录中,请稍后...')
+    $('#loader').css('display', 'block');
+}
+
+// 登录失败 de 回调函数
+var on_connect_fail = function() {
+    is_connected = false
+    $('#loader').find('div.loaderTips').text('连接超时, 请重试!')
+    $('#loader').css('display', 'block');
+}
+
+// 连接被断开 de 回调函数, 如在其他地方也有人登录同一个账号的话
+var on_disconnected = function() {
+    is_connected = false
+    $('#loader').find('div.loaderTips').html('连接已断开, 请确认是否有人在其他设备登录!<br />正在自动重连...')
+    $('#loader').css('display', 'block');
+    $('#btn_send').attr('disabled', true)
+}
+
+// 记录调试信息
+var log = function(msg) {
+    console.log(msg)
+    var tmpDiv = $('<div></div>').text(msg)
+    $OUTPUT.append(tmpDiv)
+}
+
+// 定义一群后妈养的孩子(回调函数们)~~
+var callbacks = {
+    // 发送成功*后*...
+    after_send: after_send,
+    // 接受到消息*后*...
+    receive: receive,
+    // 加载聊天记录成功*后*...
+    load_chatlogs_success: load_chatlogs_success,
+    // 加载错误*后*....
+    load_error: load_error,
+    // 登录成功"后"...
+    on_connected: on_connected,
+    // 登录中的时"后"...
+    on_connecting: on_connecting,
+    // 用户连接被断开"后"...(如用户在其他地方登录)
+    on_disconnected: on_disconnected,
+    // 登录失败"后"...
+    on_connect_fail: on_connect_fail,
+    // 日志记录器
+    log: log,
+}
+
+// 合体(想歪的面壁去)
+$.extend(settings, callbacks)
+
+// 经人介绍, 知道对方的情况了
+chat.initialize(settings)
+
+// 约会开始
+chat.connect();
+
+$(function() {
+    // 初始化
+    window.loadheight = $('#hook').height();
+    $("#hook").css("marginTop", "-" + loadheight + "px");
+    $("#session_container").css({
+        "min-height": $(window).height() - 90
+    });
+    $("html, body").scrollTop(1);
+    $(document).scroll(function() {
+        // 虽然看似废物, 但实际上有极其庞大的作用!!!
+        // 一切都是为了奇葩到极点的Android 微信内置浏览器兼容问题!!!
+        // 哭晕在开源的世界里
+        var xxx = document.body.scrollTop
+        if (document.body.scrollTop < 1 && !loadFlag) {
+            // 显示菊花
+            showHook();
+            // 设置加载请求标志
+            loadFlag = true;
+            if (is_more && is_connected) {
+                // 加载请求
+                chat.load_chatlogs(settings.f_uname)
+            } else {
+                loadHook();
+                setTimeout(function() {
+                    loadFlag = false;
+                }, load_interval);
+            }
+        }
+    })
+        // 我xx你妹的兼容问题
+    if (browser.versions.ios && (browser.versions.iPhone || browser.versions.iPad)) {
+        // 发送消息
+        $("#btn_send").click(function() {
+            // 获取要发送的消息内容
+            var send_content = $("textarea.sendContent").val()
+            if ((typeof send_content !== 'undefined') && ($.trim(send_content))) {
+                chat.send(settings.f_uname, send_content)
+            }
+            $(".sendContent").blur();
+        })
+        $(".sendContent").focus(function() {
+            $(".sendWrap").css({
+                "position": "relative"
+            });
+            $(".sendWrapPlace").hide();
+        })
+        $(".sendContent").blur(function() {
+            $(".sendWrap").css({
+                "position": "fixed"
+            });
+            $(".sendWrapPlace").show();
+        })
+    } else {
+        // 发送消息
+        $("#btn_send").click(function() {
+            // 获取要发送的消息内容
+            var send_content = $("textarea.sendContent").val()
+            if ((typeof send_content !== 'undefined') && ($.trim(send_content))) {
+
+                chat.send(settings.f_uname, send_content)
+            }
+        })
+    }
+    // "Ctrl+Space" 发送聊天内容
+    $('textarea.sendContent').keypress(function(e) {
+        if (e.ctrlKey && e.which == 13 || e.which == 10) {
+            $('#btn_send').click()
+        }
+    })
+})
+
+    </script>
+</body>
+</html>
+ 
